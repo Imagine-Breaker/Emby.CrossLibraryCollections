@@ -1,0 +1,8 @@
+bin/
+obj/
+*.user
+*.suo
+*.ide/
+.vs/
+*.zip
+dist/
