@@ -187,7 +187,7 @@ namespace Emby.CrossLibraryCollections.Services
                 else
                 {
                     // 增量添加新成员
-                    var currentChildrenIds = boxSet.GetChildren(new InternalItemsQuery()).Select(c => c.InternalId).ToHashSet();
+                    var currentChildrenIds = new HashSet<long>(boxSet.GetChildren(new InternalItemsQuery()).Select(c => c.InternalId));
                     var newItemsToAdd = targetItems.Where(x => !currentChildrenIds.Contains(x.InternalId)).Select(x => x.InternalId).ToArray();
 
                     if (newItemsToAdd.Length > 0)
@@ -196,10 +196,10 @@ namespace Emby.CrossLibraryCollections.Services
                         await _collectionManager.AddToCollection(boxSet.InternalId, newItemsToAdd).ConfigureAwait(false);
                     }
 
-                    // 反向清理：如果启用了反向清理，且原条目不在当前命中范围中（且满足自动规则的定义），予以移除
+                    // 反向清理：如果启用了反向清理，且原条目不在当前命中范围中，予以移除
                     if (config.EnableReverseCleanup)
                     {
-                        var targetIdSet = targetItems.Select(x => x.InternalId).ToHashSet();
+                        var targetIdSet = new HashSet<long>(targetItems.Select(x => x.InternalId));
                         var itemsToRemove = currentChildrenIds.Where(id => !targetIdSet.Contains(id)).ToArray();
                         if (itemsToRemove.Length > 0)
                         {
