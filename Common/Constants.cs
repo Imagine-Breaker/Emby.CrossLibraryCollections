@@ -20,11 +20,27 @@ namespace Emby.CrossLibraryCollections.Common
         };
 
         /// <summary>
-        /// 噪点后缀与前缀（在比对和提取系列公共名时自动剥离）
+        /// 默认前置修饰词（最高优先级预处理脱壳剥离）
+        /// </summary>
+        public static readonly string[] DefaultPrefixModifiers = new string[]
+        {
+            "剧场版", "电影版", "动画", "电视剧", "漫改", "特别篇", "OVA", "OAD", "SP"
+        };
+
+        /// <summary>
+        /// 默认定界分隔词（用于截断提取系列名，如同《哈利·波特与魔法石》截为《哈利·波特》）
+        /// </summary>
+        public static readonly string[] DefaultDelimiterWords = new string[]
+        {
+            "与", "之", "：", ":", "·", "-", "－", "~", "篇"
+        };
+
+        /// <summary>
+        /// 噪点后缀与标记（在比对和提取系列公共名时自动清洗）
         /// </summary>
         public static readonly string[] DefaultNoiseWords = new string[]
         {
-            "系列", "合集", "宇宙", "全集", "正片", "剧场版", "特别篇", "外传", "总集篇", "先行版", "篇",
+            "系列", "合集", "宇宙", "全集", "正片", "特别篇", "外传", "总集篇", "先行版",
             "OVA", "OAD", "SP", "Movie", "The Movie", "Collection", "Franchise", "Universe",
             "Season", "S01", "S02", "S03", "S04", "S05", "S06", "S07", "S08", "S09", "S10",
             "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9",

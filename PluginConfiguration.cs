@@ -49,9 +49,29 @@ namespace Emby.CrossLibraryCollections
         public string BlacklistKeywords { get; set; } = string.Empty;
 
         /// <summary>
+        /// 前置修饰词列表（逗号分隔），最高优先级预处理脱壳（如：剧场版, 电影版, OVA, SP）
+        /// </summary>
+        public string PrefixModifiers { get; set; } = string.Join(", ", Constants.DefaultPrefixModifiers);
+
+        /// <summary>
+        /// 定界分隔词列表（逗号分隔），用于截断提取系列名（如：与, 之, ：, :, ·, -, －, ~）
+        /// </summary>
+        public string DelimiterWords { get; set; } = string.Join(", ", Constants.DefaultDelimiterWords);
+
+        /// <summary>
         /// 附加噪点过滤词（逗号分隔）
         /// </summary>
         public string AdditionalNoiseWords { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 排除扫描的媒体库 ID/名称列表
+        /// </summary>
+        public List<string> ExcludedLibraryIds { get; set; } = new List<string>();
+
+        /// <summary>
+        /// 自动为没有封面的合集提取并设置内部影片海报
+        /// </summary>
+        public bool AutoSetPoster { get; set; } = true;
 
         /// <summary>
         /// TMDb API 密钥（可选，用于辅助超级宇宙识别；为空时纯本地计算）

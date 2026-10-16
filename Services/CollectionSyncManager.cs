@@ -34,12 +34,12 @@ namespace Emby.CrossLibraryCollections.Services
             _tmdbService = tmdbService;
         }
 
-        public async Task RunSyncAsync(IProgress<double> progress, CancellationToken cancellationToken)
+        public async Task RunSyncAsync(IProgress<double> progress, CancellationToken cancellationToken, bool cleanAndRebuild = false)
         {
             var config = Plugin.Instance.Configuration;
-            _logger.Info("[CrossLibraryCollections] Starting Cross-Library Collections synchronization...");
+            _logger.Info($"[CrossLibraryCollections] Starting synchronization (CleanAndRebuild: {cleanAndRebuild})...");
 
-            // 1. 构建黑名单字典
+            // 1. 解析黑名单字典
             var blacklist = new HashSet<string>(Constants.DefaultGenreBlacklist, StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(config.BlacklistKeywords))
             {
@@ -49,27 +49,55 @@ namespace Emby.CrossLibraryCollections.Services
                 }
             }
 
-            // 2. 自定义噪点词列表
+            // 2. 解析前置修饰词与定界分隔词列表
+            var prefixModifiers = new List<string>();
+            if (!string.IsNullOrWhiteSpace(config.PrefixModifiers))
+            {
+                prefixModifiers.AddRange(config.PrefixModifiers.Split(new[] { ',', '，', ';', '；' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()));
+            }
+            else
+            {
+                prefixModifiers.AddRange(Constants.DefaultPrefixModifiers);
+            }
+
+            var delimiterWords = new List<string>();
+            if (!string.IsNullOrWhiteSpace(config.DelimiterWords))
+            {
+                delimiterWords.AddRange(config.DelimiterWords.Split(new[] { ',', '，', ';', '；' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()));
+            }
+            else
+            {
+                delimiterWords.AddRange(Constants.DefaultDelimiterWords);
+            }
+
+            // 3. 解析自定义噪点词列表
             var customNoiseWords = new List<string>();
             if (!string.IsNullOrWhiteSpace(config.AdditionalNoiseWords))
             {
                 customNoiseWords.AddRange(config.AdditionalNoiseWords.Split(new[] { ',', '，', ';', '；' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()));
             }
 
-            // 3. 查询服务器所有 Movies 和 Series
+            // 4. 解析排除的媒体库 ID/名称集合
+            var excludedLibraries = new HashSet<string>(config.ExcludedLibraryIds ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+
+            // 5. 查询服务器所有 Movies 和 Series（顶级作品，绝不包含季或集）
             var query = new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { typeof(Movie).Name, typeof(Series).Name },
                 Recursive = true
             };
 
-            var items = _libraryManager.GetItemList(query);
-            _logger.Info($"[CrossLibraryCollections] Found {items.Length} total movies & TV series to analyze.");
+            var allItems = _libraryManager.GetItemList(query);
+            _logger.Info($"[CrossLibraryCollections] Found {allItems.Length} total movies & TV series in Emby.");
 
-            // 聚类映射表: 合集名称 -> 对应的 Media Item 列表
+            // 过滤掉位于排除媒体库中的条目
+            var items = allItems.Where(item => !IsItemInExcludedLibrary(item, excludedLibraries)).ToArray();
+            _logger.Info($"[CrossLibraryCollections] After excluding libraries, analyzing {items.Length} items.");
+
+            // 聚类映射表: 合集名称 -> 对应的 BaseItem 列表
             var collectionGroups = new Dictionary<string, List<BaseItem>>(StringComparer.OrdinalIgnoreCase);
 
-            // 4. 第一优先级：用户自定义别名映射规则
+            // 6. 第一优先级：用户自定义别名映射规则
             if (config.CustomRules != null && config.CustomRules.Count > 0)
             {
                 foreach (var rule in config.CustomRules)
@@ -96,54 +124,63 @@ namespace Emby.CrossLibraryCollections.Services
                 }
             }
 
-            // 5. 第二优先级：智能自动聚类 (文本归一化 + 公共前缀 + 物理文件夹回溯)
+            // 7. 第二优先级：智能自动聚类
+            // 流程：前置修饰词脱壳 -> 标题常规清洗 -> 定界分隔词提取系列主名
             if (config.EnableAutoClustering)
             {
-                var cleanNameMap = new List<(string CleanName, BaseItem Item)>();
+                // 存储: (Item, CleanTitle, SeriesCandidate)
+                var processedItems = new List<(BaseItem Item, string CleanTitle, string SeriesCandidate)>();
+
                 foreach (var item in items)
                 {
-                    var clean = TitleNormalizer.Normalize(item.Name, customNoiseWords);
-                    if (!string.IsNullOrEmpty(clean) && !blacklist.Contains(clean))
+                    // 1) 前置修饰词最高优先级剥离脱壳（如将“剧场版 鬼灭之刃”脱壳为“鬼灭之刃”）
+                    var stripped = TitleNormalizer.StripPrefixModifiers(item.Name, prefixModifiers);
+
+                    // 2) 基础标题清洗（去除年份、方括号、噪点词）
+                    var clean = TitleNormalizer.Normalize(stripped, customNoiseWords);
+
+                    if (string.IsNullOrWhiteSpace(clean) || blacklist.Contains(clean))
+                        continue;
+
+                    // 3) 定界分隔词截断提取（如“哈利·波特与魔法石”截为“哈利·波特”）
+                    var seriesCandidate = TitleNormalizer.ExtractSeriesByDelimiter(clean, delimiterWords);
+
+                    processedItems.Add((item, clean, seriesCandidate));
+                }
+
+                // 按完全相同的清洗标题聚类
+                var byCleanTitle = processedItems.GroupBy(x => x.CleanTitle, StringComparer.OrdinalIgnoreCase);
+                foreach (var group in byCleanTitle)
+                {
+                    if (group.Count() >= 2 && !blacklist.Contains(group.Key))
                     {
-                        cleanNameMap.Add((clean, item));
+                        foreach (var entry in group)
+                        {
+                            AddItemToGroup(collectionGroups, group.Key, entry.Item);
+                        }
                     }
                 }
 
-                // 尝试配对跨库项目
-                for (int i = 0; i < cleanNameMap.Count; i++)
+                // 按定界分隔词截断出的系列名聚类
+                var bySeriesCandidate = processedItems.GroupBy(x => x.SeriesCandidate, StringComparer.OrdinalIgnoreCase);
+                foreach (var group in bySeriesCandidate)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var entryA = cleanNameMap[i];
-
-                    for (int j = i + 1; j < cleanNameMap.Count; j++)
+                    // 仅当由定界词产生并且该系列主名下聚集了 >= 2 部作品时
+                    if (!string.IsNullOrWhiteSpace(group.Key) && group.Key.Length >= 2 && !blacklist.Contains(group.Key))
                     {
-                        var entryB = cleanNameMap[j];
-
-                        // 如果完全相同，或计算出的公共前缀有效
-                        string seriesName = null;
-                        if (string.Equals(entryA.CleanName, entryB.CleanName, StringComparison.OrdinalIgnoreCase))
+                        // 检查是否提取出了有价值的系列名（不同于原作品本身，或者有多部作品归属于此）
+                        if (group.Count() >= config.MinItemsForCollection)
                         {
-                            seriesName = entryA.CleanName;
-                        }
-                        else
-                        {
-                            var prefix = TitleNormalizer.GetLongestCommonPrefix(entryA.CleanName, entryB.CleanName);
-                            if (!string.IsNullOrEmpty(prefix) && prefix.Length >= 2 && !blacklist.Contains(prefix))
+                            foreach (var entry in group)
                             {
-                                seriesName = prefix;
+                                AddItemToGroup(collectionGroups, group.Key, entry.Item);
                             }
-                        }
-
-                        if (!string.IsNullOrEmpty(seriesName) && !blacklist.Contains(seriesName))
-                        {
-                            AddItemToGroup(collectionGroups, seriesName, entryA.Item);
-                            AddItemToGroup(collectionGroups, seriesName, entryB.Item);
                         }
                     }
                 }
             }
 
-            // 6. 获取现有所有 BoxSet（合集）
+            // 8. 获取现有所有 BoxSet（合集）
             var existingBoxSets = _libraryManager.GetItemList(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { typeof(BoxSet).Name },
@@ -152,10 +189,37 @@ namespace Emby.CrossLibraryCollections.Services
 
             var boxSetMap = existingBoxSets.ToDictionary(b => b.Name, b => b, StringComparer.OrdinalIgnoreCase);
 
+            // 9. 如果是“清空并重新扫描创建”，清空匹配的旧合集
+            if (cleanAndRebuild)
+            {
+                _logger.Info("[CrossLibraryCollections] Clean & Rebuild requested. Purging existing matched collections...");
+                foreach (var kvp in collectionGroups)
+                {
+                    if (boxSetMap.TryGetValue(kvp.Key, out var oldBoxSet))
+                    {
+                        try
+                        {
+                            _logger.Info($"[CrossLibraryCollections] Deleting old collection '{oldBoxSet.Name}' for clean rebuild.");
+                            _libraryManager.DeleteItem(oldBoxSet, new DeleteOptions { DeleteFileLocation = true });
+                            boxSetMap.Remove(kvp.Key);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.Warn($"[CrossLibraryCollections] Could not delete collection '{oldBoxSet.Name}', emptying items instead: {ex.Message}");
+                            var children = oldBoxSet.GetChildren(new InternalItemsQuery()).Select(c => c.InternalId).ToArray();
+                            if (children.Length > 0)
+                            {
+                                _collectionManager.RemoveFromCollection(oldBoxSet, children);
+                            }
+                        }
+                    }
+                }
+            }
+
             var totalGroups = collectionGroups.Count;
             var processed = 0;
 
-            // 7. 执行同步到 Emby 合集
+            // 10. 执行同步到 Emby 合集
             foreach (var kvp in collectionGroups)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -165,9 +229,13 @@ namespace Emby.CrossLibraryCollections.Services
                 var collectionName = kvp.Key;
                 var targetItems = kvp.Value.Distinct().ToList();
 
-                // 孤岛保护校验
-                if (targetItems.Count < config.MinItemsForCollection)
+                // 核心防误判：计算真正的独立作品数量（针对单剧集分多季去重）
+                var distinctWorkCount = GetDistinctWorkCount(targetItems);
+
+                // 孤岛保护校验：只有独立作品数 >= MinItemsForCollection 才建合集
+                if (distinctWorkCount < config.MinItemsForCollection)
                 {
+                    _logger.Debug($"[CrossLibraryCollections] Skipped '{collectionName}': distinct works ({distinctWorkCount}) < MinItems ({config.MinItemsForCollection}).");
                     continue;
                 }
 
@@ -175,7 +243,7 @@ namespace Emby.CrossLibraryCollections.Services
                 BoxSet boxSet;
                 if (!boxSetMap.TryGetValue(collectionName, out boxSet))
                 {
-                    _logger.Info($"[CrossLibraryCollections] Creating new unified collection '{collectionName}' with {targetItems.Count} items.");
+                    _logger.Info($"[CrossLibraryCollections] Creating new unified collection '{collectionName}' with {targetItems.Count} items ({distinctWorkCount} distinct works).");
                     var createOptions = new CollectionCreationOptions
                     {
                         Name = collectionName,
@@ -208,9 +276,130 @@ namespace Emby.CrossLibraryCollections.Services
                         }
                     }
                 }
+
+                // 11. 自动为没有封面的合集提取并设置内部影片的海报
+                if (config.AutoSetPoster && boxSet != null)
+                {
+                    TryInheritPoster(boxSet, targetItems);
+                }
             }
 
             _logger.Info("[CrossLibraryCollections] Cross-Library Collections synchronization finished successfully.");
+        }
+
+        /// <summary>
+        /// 检查项目是否属于被排除的媒体库
+        /// </summary>
+        private static bool IsItemInExcludedLibrary(BaseItem item, HashSet<string> excludedLibraries)
+        {
+            if (excludedLibraries == null || excludedLibraries.Count == 0 || item == null)
+                return false;
+
+            try
+            {
+                var parents = item.GetParents();
+                if (parents != null)
+                {
+                    foreach (var p in parents)
+                    {
+                        if (excludedLibraries.Contains(p.Id.ToString()) ||
+                            excludedLibraries.Contains(p.InternalId.ToString()) ||
+                            excludedLibraries.Contains(p.Name))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // ignored
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 核心去重：计算独立作品数量，防止单部剧集分了多季被计为多部作品
+        /// </summary>
+        private static int GetDistinctWorkCount(IEnumerable<BaseItem> items)
+        {
+            if (items == null) return 0;
+
+            var distinctKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var item in items)
+            {
+                if (item == null) continue;
+
+                // 优先根据全局媒体标识符 (TMDb / IMDb / TVDb) 进行跨季去重
+                var tmdb = item.GetProviderId(MetadataProviders.Tmdb);
+                if (!string.IsNullOrWhiteSpace(tmdb))
+                {
+                    distinctKeys.Add($"tmdb:{tmdb}");
+                    continue;
+                }
+
+                var imdb = item.GetProviderId(MetadataProviders.Imdb);
+                if (!string.IsNullOrWhiteSpace(imdb))
+                {
+                    distinctKeys.Add($"imdb:{imdb}");
+                    continue;
+                }
+
+                var tvdb = item.GetProviderId(MetadataProviders.Tvdb);
+                if (!string.IsNullOrWhiteSpace(tvdb))
+                {
+                    distinctKeys.Add($"tvdb:{tvdb}");
+                    continue;
+                }
+
+                // 如果是 Series，基于 Series 本身的 InternalId 去重
+                if (item is Series series)
+                {
+                    distinctKeys.Add($"series:{series.InternalId}");
+                    continue;
+                }
+
+                // 默认使用 InternalId
+                distinctKeys.Add($"item:{item.InternalId}");
+            }
+
+            return distinctKeys.Count;
+        }
+
+        /// <summary>
+        /// 自动为没有封面的合集提取并设置内部影片的海报
+        /// </summary>
+        private void TryInheritPoster(BoxSet boxSet, List<BaseItem> targetItems)
+        {
+            try
+            {
+                if (boxSet.HasImage(ImageType.Primary))
+                    return;
+
+                // 寻找第一个有海报的子项
+                var candidate = targetItems.FirstOrDefault(x => x.HasImage(ImageType.Primary));
+                if (candidate != null)
+                {
+                    var imageInfo = candidate.GetImageInfo(ImageType.Primary, 0);
+                    if (imageInfo != null && !string.IsNullOrWhiteSpace(imageInfo.Path))
+                    {
+                        var newImage = new ItemImageInfo
+                        {
+                            Path = imageInfo.Path,
+                            Type = ImageType.Primary
+                        };
+                        boxSet.SetImage(newImage, 0);
+                        boxSet.UpdateToRepository(ItemUpdateType.ImageUpdate);
+                        _logger.Info($"[CrossLibraryCollections] Inherited poster for collection '{boxSet.Name}' from '{candidate.Name}'.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn($"[CrossLibraryCollections] Failed to set poster for collection '{boxSet.Name}': {ex.Message}");
+            }
         }
 
         private static void AddItemToGroup(Dictionary<string, List<BaseItem>> groups, string name, BaseItem item)

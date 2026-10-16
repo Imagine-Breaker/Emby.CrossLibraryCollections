@@ -4,9 +4,9 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <AssemblyName>Emby.CrossLibraryCollections</AssemblyName>
     <RootNamespace>Emby.CrossLibraryCollections</RootNamespace>
-    <FileVersion>1.0.0.0</FileVersion>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <PackageVersion>1.0.0</PackageVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <PackageVersion>1.1.0</PackageVersion>
     <Description>Emby plugin to automatically aggregate movies and TV series of the same franchise into unified cross-library collections.</Description>
     <Authors>Imagine-Breaker</Authors>
     <RepositoryUrl>https://github.com/Imagine-Breaker/Emby.CrossLibraryCollections</RepositoryUrl>
