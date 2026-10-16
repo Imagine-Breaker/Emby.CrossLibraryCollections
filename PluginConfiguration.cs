@@ -1,5 +1,6 @@
 using MediaBrowser.Model.Plugins;
 using System.Collections.Generic;
+using Emby.CrossLibraryCollections.Common;
 
 namespace Emby.CrossLibraryCollections
 {
