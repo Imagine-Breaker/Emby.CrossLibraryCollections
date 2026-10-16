@@ -8,36 +8,47 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release:
+    name: Build & Publish Release
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Setup .NET
+    - name: Setup .NET SDK
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.0.x'
+        cache: true
+        cache-dependency-path: 'Emby.CrossLibraryCollections.csproj'
 
     - name: Restore Dependencies
       run: dotnet restore Emby.CrossLibraryCollections.csproj
 
-    - name: Build Plugin
+    - name: Build Plugin (Release)
       run: dotnet build Emby.CrossLibraryCollections.csproj --configuration Release --no-restore -o ./dist
 
-    - name: Zip Artifact
+    - name: Package Artifacts
       run: |
         cd ./dist
-        zip -r ../Emby.CrossLibraryCollections.zip Emby.CrossLibraryCollections.dll
+        zip -9 -r ../Emby.CrossLibraryCollections.zip Emby.CrossLibraryCollections.dll
 
-    - name: Create GitHub Release
+    - name: Publish GitHub Release
       uses: softprops/action-gh-release@v2
       with:
+        name: ${{ github.ref_name }}
+        tag_name: ${{ github.ref_name }}
         files: |
           ./dist/Emby.CrossLibraryCollections.dll
           Emby.CrossLibraryCollections.zip
         generate_release_notes: true
+        draft: false
+        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
