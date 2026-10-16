@@ -1,0 +1,95 @@
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+<div id="CrossLibraryCollectionsConfigPage"
+     data-role="page"
+     class="page type-interior pluginConfigurationPage page-windowScroll"
+     data-require="emby-button,emby-checkbox,emby-input"
+     data-controller="__plugin/CrossLibraryCollectionsConfigJs">
+
+    <div data-role="content">
+        <div class="content-primary">
+            <h1>🎬 跨库同系列自动合集助手 (Cross-Library Collections)</h1>
+            <p class="fieldDescription">
+                自动将电影库与剧集库中的同系列作品（如：动画+剧场版、漫威MCU、星际迷航等）整合进同一合集，支持标题清洗、公共前缀聚类及防误创过滤。
+            </p>
+
+            <form id="collectionsConfigForm">
+                <!-- 基础设置 -->
+                <div class="verticalSection verticalSection-extrabottompadding">
+                    <h2 class="sectionTitle">⚙️ 运行与防护设置</h2>
+                    
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="chkEnableTask" />
+                            <span>启用定时扫描任务 (默认每日凌晨自动整理)</span>
+                        </label>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="chkAutoClustering" />
+                            <span>启用智能自动聚类 (自动计算标题前缀与路径合并同系列)</span>
+                        </label>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="chkReverseCleanup" />
+                            <span>启用反向清理 (影片被删除或移走后自动从合集中剔除)</span>
+                        </label>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="txtMinItems">最小成集条目数 (孤岛保护):</label>
+                        <input is="emby-input" type="number" id="txtMinItems" min="1" max="10" />
+                        <div class="fieldDescription">仅当同系列作品数量大于或等于该数值时才创建合集（默认 2，防止只有一部作品就建合集）。</div>
+                    </div>
+                </div>
+
+                <!-- 过滤与黑名单 -->
+                <div class="verticalSection verticalSection-extrabottompadding">
+                    <h2 class="sectionTitle">🛡️ 黑名单与去噪词</h2>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="txtBlacklist">分类与题材黑名单 (英文逗号分隔):</label>
+                        <input is="emby-input" type="text" id="txtBlacklist" />
+                        <div class="fieldDescription">命中的词语绝不会被作为合集名创建（如：动作, 动画, 喜剧, 科幻, 连载, 4K）。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="txtNoiseWords">标题额外噪点过滤词 (英文逗号分隔):</label>
+                        <input is="emby-input" type="text" id="txtNoiseWords" />
+                        <div class="fieldDescription">比对系列名称前自动剔除的字词（如：特别篇, 剧场版, 重制版, 第一季）。</div>
+                    </div>
+                </div>
+
+                <!-- 高级设置 -->
+                <div class="verticalSection verticalSection-extrabottompadding">
+                    <h2 class="sectionTitle">🌐 TMDb 辅助识别 (可选)</h2>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="txtTmdbKey">TMDb API Key (选填):</label>
+                        <input is="emby-input" type="text" id="txtTmdbKey" />
+                        <div class="fieldDescription">留空时完全使用本地纯离线运算。填入后可在本地无法判断时向 TMDb 查询所属系列（请求已做内置限流保护）。</div>
+                    </div>
+                </div>
+
+                <!-- 自定义别名映射规则 -->
+                <div class="verticalSection verticalSection-extrabottompadding">
+                    <h2 class="sectionTitle">🎯 自定义别名映射 (强制定向聚合)</h2>
+                    <p class="fieldDescription">针对中英文译名不同或无公共前缀的超级宇宙（如复仇者联盟与洛基剧集），可在此添加映射规则：</p>
+                    <div id="rulesListContainer" style="margin-bottom: 1em;"></div>
+                    <button is="emby-button" type="button" id="btnAddRule" class="raised button-alt">
+                        <span>+ 添加系列映射</span>
+                    </button>
+                </div>
+
+                <!-- 操作按钮 -->
+                <div style="margin-top: 2em; display: flex; gap: 10px;">
+                    <button is="emby-button" type="submit" class="raised button-submit block">
+                        <span>💾 保存配置</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
