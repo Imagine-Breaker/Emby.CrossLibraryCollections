@@ -18,12 +18,13 @@ namespace Emby.CrossLibraryCollections
 
         public override string Name => "Cross-Library Collections (跨库同系列合集)";
 
-        public override string Description => "自动将同系列的电影和电视剧（如动画+剧场版、漫威MCU等）聚合成统一的Emby合集。支持无标签零配置运行，内置防误创与去噪算法。";
+        public override string Description => "自动将同系列的电影和电视剧聚合成统一的Emby合集。支持全服封面TMDb智能获取、单剧多季防误判与定界词截断。";
 
         public override Guid Id => Guid.Parse("9B52DE87-D306-444F-A16F-E64B0175BD4E");
 
         public CollectionSyncManager SyncManager { get; private set; }
         public TmdbService TmdbService { get; private set; }
+        public ILogger Logger { get; private set; }
 
         public Plugin(
             IApplicationPaths appPaths,
@@ -35,9 +36,25 @@ namespace Emby.CrossLibraryCollections
             : base(appPaths, xmlSerializer)
         {
             Instance = this;
-            var logger = logManager.GetLogger(Name);
-            TmdbService = new TmdbService(logger, jsonSerializer);
-            SyncManager = new CollectionSyncManager(libraryManager, collectionManager, logger, TmdbService);
+            Logger = logManager.GetLogger(Name);
+            TmdbService = new TmdbService(Logger, jsonSerializer);
+            SyncManager = new CollectionSyncManager(libraryManager, collectionManager, Logger, TmdbService, appPaths);
+
+            // 监听新影片入库事件，自动进行增量候选发现
+            try
+            {
+                libraryManager.ItemAdded += (sender, args) =>
+                {
+                    if (args?.Item != null)
+                    {
+                        SyncManager.OnNewItemAdded(args.Item);
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                Logger.ErrorException("[CrossLibraryCollections] Failed to hook ItemAdded event", ex);
+            }
         }
 
         public IEnumerable<PluginPageInfo> GetPages()
@@ -48,7 +65,10 @@ namespace Emby.CrossLibraryCollections
                 {
                     Name = "CrossLibraryCollectionsConfig",
                     EmbeddedResourcePath = GetType().Namespace + ".Configuration.configPage.html",
-                    EnableInMainMenu = false
+                    EnableInMainMenu = true,
+                    MenuSection = "server",
+                    MenuIcon = "auto_awesome_motion",
+                    DisplayName = "跨库同系列合集"
                 },
                 new PluginPageInfo
                 {

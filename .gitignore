@@ -1,8 +1,15 @@
-bin/
-obj/
+## Visual Studio / .NET 临时与编译产物
+[Bb]in/
+[Oo]bj/
 *.user
 *.suo
-*.ide/
-.vs/
-*.zip
-dist/
+*.userosscache
+*.sln.docstates
+
+# 临时排查日志与测试数据
+*.log
+*.tmp
+embylog*.txt
+boxsets*.json
+all_*.json
+*.jpg

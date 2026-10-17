@@ -12,9 +12,31 @@ namespace Emby.CrossLibraryCollections
         public string CollectionName { get; set; } = string.Empty;
 
         /// <summary>
-        /// 匹配别名/关键词（英文逗号分隔），如 "鬼灭之刃,鬼滅の刃,Demon Slayer"
+        /// 匹配别名/关键词（逗号/分号分隔，支持子串模糊匹配），如 "鬼灭之刃,鬼滅の刃,Demon Slayer"
         /// </summary>
         public string Keywords { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// 候选条目详情（前端展示）
+    /// </summary>
+    public class CandidateItemInfo
+    {
+        public long Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Type { get; set; } = string.Empty;
+        public bool IsNewItem { get; set; } = false;
+    }
+
+    /// <summary>
+    /// 疑似同系列候选组
+    /// </summary>
+    public class CandidateGroup
+    {
+        public string Id { get; set; } = string.Empty;
+        public string SuggestedName { get; set; } = string.Empty;
+        public bool IsExistingCollection { get; set; } = false;
+        public List<CandidateItemInfo> Items { get; set; } = new List<CandidateItemInfo>();
     }
 
     public class PluginConfiguration : BasePluginConfiguration
@@ -25,7 +47,7 @@ namespace Emby.CrossLibraryCollections
         public bool EnableScheduledTask { get; set; } = true;
 
         /// <summary>
-        /// 孤岛保护：只有关联条目 >= 该数值（默认2）时才真正创建合集
+        /// 孤岛保护：只有关联独立作品数 >= 该数值（默认2）时才真正创建合集
         /// </summary>
         public int MinItemsForCollection { get; set; } = 2;
 
@@ -35,7 +57,7 @@ namespace Emby.CrossLibraryCollections
         public bool EnableReverseCleanup { get; set; } = true;
 
         /// <summary>
-        /// 智能自动聚类：根据公共标题前缀及路径自动发现同系列（零配置自动合集）
+        /// 智能自动聚类：根据公共标题前缀、脱壳与定界词截断发现同系列
         /// </summary>
         public bool EnableAutoClustering { get; set; } = true;
 
@@ -45,24 +67,19 @@ namespace Emby.CrossLibraryCollections
         public List<SeriesRule> CustomRules { get; set; } = new List<SeriesRule>();
 
         /// <summary>
-        /// 题材/标签黑名单（逗号分隔）
+        /// 题材/标签黑名单（逗号分隔，无修饰空格）
         /// </summary>
         public string BlacklistKeywords { get; set; } = string.Empty;
 
         /// <summary>
-        /// 前置修饰词列表（逗号分隔），最高优先级预处理脱壳（如：剧场版, 电影版, OVA, SP）
+        /// 统一的标题修饰与噪点过滤词列表
         /// </summary>
-        public string PrefixModifiers { get; set; } = string.Join(", ", Constants.DefaultPrefixModifiers);
+        public string NoiseAndModifiers { get; set; } = string.Join(",", Constants.DefaultNoiseAndModifiers);
 
         /// <summary>
-        /// 定界分隔词列表（逗号分隔），用于截断提取系列名（如：与, 之, ：, :, ·, -, －, ~）
+        /// 定界分隔词列表
         /// </summary>
-        public string DelimiterWords { get; set; } = string.Join(", ", Constants.DefaultDelimiterWords);
-
-        /// <summary>
-        /// 附加噪点过滤词（逗号分隔）
-        /// </summary>
-        public string AdditionalNoiseWords { get; set; } = string.Empty;
+        public string DelimiterWords { get; set; } = string.Join(",", Constants.DefaultDelimiterWords);
 
         /// <summary>
         /// 排除扫描的媒体库 ID/名称列表
@@ -70,13 +87,28 @@ namespace Emby.CrossLibraryCollections
         public List<string> ExcludedLibraryIds { get; set; } = new List<string>();
 
         /// <summary>
-        /// 自动为没有封面的合集提取并设置内部影片海报
+        /// 自动为没有封面的合集获取并设置海报
         /// </summary>
         public bool AutoSetPoster { get; set; } = true;
 
         /// <summary>
-        /// TMDb API 密钥（可选，用于辅助超级宇宙识别；为空时纯本地计算）
+        /// TMDb API 密钥
         /// </summary>
         public string TmdbApiKey { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 用户已采纳/处理过的候选公共前缀列表（避免改名采纳后再次重复推荐原前缀）
+        /// </summary>
+        public List<string> AdoptedCandidatePrefixes { get; set; } = new List<string>();
+
+        /// <summary>
+        /// 用户忽略的候选公共前缀列表（避免反复推荐已忽略的疑似系列）
+        /// </summary>
+        public List<string> IgnoredCandidatePrefixes { get; set; } = new List<string>();
+
+        /// <summary>
+        /// 最近一次扫描生成的疑似同系列候选推荐池
+        /// </summary>
+        public List<CandidateGroup> PendingCandidates { get; set; } = new List<CandidateGroup>();
     }
 }

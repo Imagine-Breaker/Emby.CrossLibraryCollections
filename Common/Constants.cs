@@ -20,27 +20,20 @@ namespace Emby.CrossLibraryCollections.Common
         };
 
         /// <summary>
-        /// 默认前置修饰词（最高优先级预处理脱壳剥离）
-        /// </summary>
-        public static readonly string[] DefaultPrefixModifiers = new string[]
-        {
-            "剧场版", "电影版", "动画", "电视剧", "漫改", "特别篇", "OVA", "OAD", "SP"
-        };
-
-        /// <summary>
-        /// 默认定界分隔词（用于截断提取系列名，如同《哈利·波特与魔法石》截为《哈利·波特》）
+        /// 默认定界分隔词（加入“的”如《凉宫春日的...》，并保留空格定界截断）
         /// </summary>
         public static readonly string[] DefaultDelimiterWords = new string[]
         {
-            "与", "之", "：", ":", "·", "-", "－", "~", "篇"
+            "与", "之", "：", ":", "·", "-", "－", "~", "篇", "的", " "
         };
 
         /// <summary>
-        /// 噪点后缀与标记（在比对和提取系列公共名时自动清洗）
+        /// 统一的标题修饰与噪点过滤词列表（扩充复合词如“新剧场版”、“重制版”、“完结篇”等）
         /// </summary>
-        public static readonly string[] DefaultNoiseWords = new string[]
+        public static readonly string[] DefaultNoiseAndModifiers = new string[]
         {
-            "系列", "合集", "宇宙", "全集", "正片", "特别篇", "外传", "总集篇", "先行版",
+            "新剧场版", "旧剧场版", "剧场版", "电影版", "特别篇", "外传", "总集篇", "先行版", "重制版", "完全版", "终章", "最终章", "完结篇",
+            "动画", "电视剧", "漫改", "真人版", "系列", "合集", "宇宙", "全集", "正片",
             "OVA", "OAD", "SP", "Movie", "The Movie", "Collection", "Franchise", "Universe",
             "Season", "S01", "S02", "S03", "S04", "S05", "S06", "S07", "S08", "S09", "S10",
             "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9",

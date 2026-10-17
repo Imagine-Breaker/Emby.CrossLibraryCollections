@@ -8,10 +8,49 @@
 
     <div data-role="content">
         <div class="content-primary">
-            <h1>🎬 跨库同系列自动合集助手 (Cross-Library Collections)</h1>
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:0.8em;">
+                <h1 style="margin:0; font-size:24px;">🎬 跨库同系列自动合集助手</h1>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span id="pluginVersionBadge" style="background:var(--theme-primary-color, #00a4dc); color:#fff; font-size:12px; font-weight:600; padding:3px 10px; border-radius:12px;">
+                        v1.5.1
+                    </span>
+                    <button is="emby-button" type="button" id="btnFastDiscover" class="raised" style="font-size:12px; padding:4px 12px;">
+                        <span>🔍 探查疑似同系列</span>
+                    </button>
+                </div>
+            </div>
+
             <p class="fieldDescription">
-                自动将电影库与剧集库中的同系列作品（如：动画+剧场版、漫威MCU、星际迷航等）整合进同一合集。内置单片多季防误判、定界分隔词截断与前置词剥离脱壳。
+                智能将跨电影库与剧集库的同系列作品整合进同一合集。内置单剧多季防误判、定界词截断、全服封面智能补全与疑似同系列审核机制。
             </p>
+
+            <!-- 疑似同系列候选审核区（全宽撑满） -->
+            <div class="verticalSection" id="candidatesSection" style="margin: 1.5em 0; width: 100%; box-sizing: border-box;">
+                <details id="candidatesDetails" style="border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 8px; padding: 12px 16px; width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.1);">
+                    <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; outline: none;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-weight: 600; font-size: 15px;">💡 疑似同系列候选推荐</span>
+                            <span id="candidatesBadge" style="font-size: 11px; background: var(--theme-primary-color, #00a4dc); color: #fff; padding: 2px 8px; border-radius: 10px; font-weight:600;">0</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <button is="emby-button" type="button" id="btnAdoptAll" class="raised button-submit" style="font-size: 11px; padding: 3px 12px; display: none;">
+                                <span>⚡ 一键采纳全部</span>
+                            </button>
+                            <span id="candidatesToggleStatus" style="font-size: 12px; font-weight: 600; color: #fff; background: rgba(255,255,255,0.12); padding: 3px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);">
+                                展开列表 ▾
+                            </span>
+                        </div>
+                    </summary>
+
+                    <div style="margin-top: 10px; font-size: 13px; opacity: 0.85;">
+                        发现具有相同公共前缀的作品群。可修改推荐合集名、点击影片胶囊可自由剔除无关作品，采纳后自动建集并沉淀为别名规则：
+                    </div>
+
+                    <div id="candidatesListContainer" style="display: flex; flex-direction: column; gap: 10px; margin-top: 14px; width: 100%; box-sizing: border-box;">
+                        <div style="opacity: 0.7; font-size:13px; padding: 4px 0;">暂无等待确认的疑似同系列。点击右上角“🔍 探查疑似同系列”可立即扫描。</div>
+                    </div>
+                </details>
+            </div>
 
             <form id="collectionsConfigForm">
                 <!-- 基础设置 -->
@@ -28,7 +67,7 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label>
                             <input is="emby-checkbox" type="checkbox" id="chkAutoClustering" />
-                            <span>启用智能自动聚类 (根据前缀脱壳、定界词截断聚合系列)</span>
+                            <span>启用智能自动聚类 (根据前缀脱壳、定界词截断聚合高置信度系列)</span>
                         </label>
                     </div>
 
@@ -42,14 +81,14 @@
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label>
                             <input is="emby-checkbox" type="checkbox" id="chkAutoSetPoster" />
-                            <span>自动设置封面海报 (合集无封面时自动提取内部第一部影片海报)</span>
+                            <span>自动补全合集封面海报 (优先从TMDb获取官方海报，无Key或离线时自动提取内部作品海报；覆盖全服所有合集)</span>
                         </label>
                     </div>
 
                     <div class="inputContainer">
                         <label class="inputLabel" for="txtMinItems">最小成集条目数 (孤岛保护):</label>
                         <input is="emby-input" type="number" id="txtMinItems" min="1" max="10" />
-                        <div class="fieldDescription">仅当同系列独立作品数量大于或等于该数值时才创建合集（默认 2，一部电视剧的多季已自动折叠防误判）。</div>
+                        <div class="fieldDescription">仅当同系列独立作品数量大于或等于该数值时才自动创建合集（默认 2，一部电视剧的多季已自动折叠防误判）。</div>
                     </div>
                 </div>
 
@@ -58,71 +97,83 @@
                     <h2 class="sectionTitle">🚫 排除特定媒体库</h2>
                     <p class="fieldDescription">勾选的媒体库将完全不参与扫描，库内的影片与剧集不会被分析或归类进任何合集：</p>
                     <div id="excludedLibrariesContainer" style="display:flex; flex-direction:column; gap:8px; margin: 10px 0;">
-                        <span style="color:#888;">正在加载服务器媒体库列表...</span>
+                        <span style="opacity: 0.7;">正在加载服务器媒体库列表...</span>
                     </div>
                 </div>
 
                 <!-- 截断与脱壳规则 -->
                 <div class="verticalSection verticalSection-extrabottompadding">
-                    <h2 class="sectionTitle">✂️ 前置脱壳与定界词截断规则</h2>
+                    <h2 class="sectionTitle">✂️ 定界词截断规则</h2>
 
                     <div class="inputContainer">
-                        <label class="inputLabel" for="txtPrefixModifiers">前置修饰词列表 (逗号分隔):</label>
-                        <input is="emby-input" type="text" id="txtPrefixModifiers" />
-                        <div class="fieldDescription">最高优先级预处理脱壳词。匹配标题开头的修饰词（如“剧场版 鬼灭之刃”、“【剧场版】刀剑神域”），先脱壳剥离再匹配系列名。</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="txtDelimiterWords">定界分隔词列表 (逗号分隔):</label>
+                        <label class="inputLabel" for="txtDelimiterWords">定界分隔词列表 (逗号分隔，无多余空格):</label>
                         <input is="emby-input" type="text" id="txtDelimiterWords" />
-                        <div class="fieldDescription">用于定界截断提取系列主名（如“与”将《哈利·波特与魔法石》截为《哈利·波特》，同名达 2 部以上才建合集，彻底杜绝任意两字相同误判）。</div>
+                        <div class="fieldDescription">用于定界截断提取系列名。支持“的”及空格作为定界词（如“凉宫春日的忧郁”截出“凉宫春日”）。内置安全锁：截断后的系列名必须 &ge; 3 个字，避免如《千与千寻》被误截为单字“千”。</div>
                     </div>
                 </div>
 
                 <!-- 过滤与黑名单 -->
                 <div class="verticalSection verticalSection-extrabottompadding">
-                    <h2 class="sectionTitle">🛡️ 黑名单与去噪词</h2>
+                    <h2 class="sectionTitle">🛡️ 标题修饰、噪点与黑名单</h2>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="txtNoiseAndModifiers">标题修饰与噪点过滤词 (逗号分隔，无多余空格):</label>
+                        <input is="emby-input" type="text" id="txtNoiseAndModifiers" />
+                        <div class="fieldDescription">统一管理所有标题干扰词（如：新剧场版,剧场版,电影版,特别篇,动画,OVA,第一季,S01,完结）。位于标题开头的自动优先脱壳，位于中间或末尾的自动去噪清洗。</div>
+                    </div>
 
                     <div class="inputContainer">
                         <label class="inputLabel" for="txtBlacklist">分类与题材黑名单 (逗号分隔):</label>
                         <input is="emby-input" type="text" id="txtBlacklist" />
-                        <div class="fieldDescription">命中的词语绝不会被作为合集名创建（如：动作, 动画, 喜剧, 科幻, 连载, 4K）。</div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="txtNoiseWords">附加噪点过滤词 (逗号分隔):</label>
-                        <input is="emby-input" type="text" id="txtNoiseWords" />
-                        <div class="fieldDescription">比对系列名称前自动剔除的字词（如：特别篇, 重制版, 先行版）。</div>
+                        <div class="fieldDescription">命中的词语绝不会被作为合集名创建（如：动作,动画,喜剧,科幻,连载,4K）。</div>
                     </div>
                 </div>
 
                 <!-- 自定义别名映射规则 -->
                 <div class="verticalSection verticalSection-extrabottompadding">
-                    <h2 class="sectionTitle">🎯 自定义别名映射 (强制定向聚合)</h2>
-                    <p class="fieldDescription">针对中英文译名不同或无公共前缀的超级宇宙（如复仇者联盟与洛基剧集），可在此添加映射规则：</p>
-                    <div id="rulesListContainer" style="margin-bottom: 1em;"></div>
-                    <button is="emby-button" type="button" id="btnAddRule" class="raised button-alt">
-                        <span>+ 添加系列映射</span>
-                    </button>
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 0.5em;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <h2 class="sectionTitle" style="margin: 0;">🎯 自定义特殊别名映射 (可选)</h2>
+                            <span id="rulesBadge" style="font-size: 11px; background: rgba(255, 255, 255, 0.12); color: inherit; padding: 2px 8px; border-radius: 10px; font-weight:600;">0</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <button is="emby-button" type="button" id="btnToggleRules" class="raised" style="font-size: 12px; padding: 4px 12px;">
+                                <span id="rulesToggleLabel">收起列表 ▴</span>
+                            </button>
+                            <button is="emby-button" type="button" id="btnAddRule" class="raised button-alt" style="font-size: 12px; padding: 4px 14px;">
+                                <span>+ 添加系列映射</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <p class="fieldDescription">
+                        专门用于无公共前缀或中英混杂的超级宇宙（如复仇者联盟、漫威MCU）。普通同名同前缀系列由算法和候选池自动处理，无需在此添加：
+                    </p>
+
+                    <div id="rulesListContainer" style="margin-top: 10px; margin-bottom: 1em;"></div>
                 </div>
 
                 <!-- 高级设置 -->
                 <div class="verticalSection verticalSection-extrabottompadding">
-                    <h2 class="sectionTitle">🌐 TMDb 辅助识别 (可选)</h2>
+                    <h2 class="sectionTitle">🌐 TMDb 官方海报与辅助识别 (可选)</h2>
                     <div class="inputContainer">
                         <label class="inputLabel" for="txtTmdbKey">TMDb API Key (选填):</label>
                         <input is="emby-input" type="text" id="txtTmdbKey" />
-                        <div class="fieldDescription">留空时完全使用本地纯离线运算。填入后可在本地无法判断时向 TMDb 查询所属系列。</div>
+                        <div class="fieldDescription">选填。填入后优先向 TMDb 检索官方高清合集海报（下载并缓存到本地）。留空时完全使用纯本地离线运算，自动从合集内部提取高清影片封面，无需网络访问。</div>
                     </div>
                 </div>
 
                 <!-- 操作按钮区 -->
-                <div style="margin-top: 2em; display: flex; gap: 15px; flex-wrap: wrap;">
+                <div style="margin-top: 2em; display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
                     <button is="emby-button" type="submit" class="raised button-submit" style="min-width: 140px;">
                         <span>💾 保存配置</span>
                     </button>
 
-                    <button is="emby-button" type="button" id="btnRebuild" class="raised" style="background:#e04a3f; color:#ffffff; min-width: 180px;">
+                    <button is="emby-button" type="button" id="btnRefreshPosters" class="raised" style="background:#00a4dc; color:#ffffff; min-width: 180px;">
+                        <span>🎨 立即补全所有合集封面</span>
+                    </button>
+
+                    <button is="emby-button" type="button" id="btnRebuild" class="raised" style="background:#cc3333; color:#ffffff; min-width: 180px;">
                         <span>🔄 清空并全量重新扫描创建</span>
                     </button>
                 </div>
