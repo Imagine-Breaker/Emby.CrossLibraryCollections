@@ -38,7 +38,10 @@ namespace Emby.CrossLibraryCollections
             Instance = this;
             Logger = logManager.GetLogger(Name);
             TmdbService = new TmdbService(Logger, jsonSerializer);
-            SyncManager = new CollectionSyncManager(libraryManager, collectionManager, Logger, TmdbService, appPaths);
+            SyncManager = new CollectionSyncManager(libraryManager, collectionManager, Logger, TmdbService, appPaths, jsonSerializer);
+
+            // 从本地独立持久缓存无损恢复历史记忆（防止升级覆盖或 XML 损坏重置）
+            SyncManager.RestoreCandidateHistoryMirror();
 
             // 监听新影片入库事件，自动进行增量候选发现
             try

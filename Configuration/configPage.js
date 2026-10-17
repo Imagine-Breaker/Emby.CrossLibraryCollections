@@ -576,9 +576,10 @@ define(['emby-button', 'emby-checkbox', 'emby-input'], function () {
                 });
                 config.CustomRules = rules;
 
-                // 核心安全锁：绝不允许通过普通表单提交覆盖清空服务端的候选推荐池与忽略列表
+                // 核心安全锁：绝不允许通过普通表单提交覆盖清空服务端的候选推荐池与已处理记忆库
                 delete config.PendingCandidates;
                 delete config.IgnoredCandidatePrefixes;
+                delete config.AdoptedCandidatePrefixes;
 
                 ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
                     Dashboard.processPluginConfigurationUpdateResult(result);

@@ -13,6 +13,7 @@ using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Logging;
+using MediaBrowser.Model.Serialization;
 
 namespace Emby.CrossLibraryCollections.Services
 {
@@ -23,19 +24,22 @@ namespace Emby.CrossLibraryCollections.Services
         private readonly ILogger _logger;
         private readonly TmdbService _tmdbService;
         private readonly IApplicationPaths _appPaths;
+        private readonly IJsonSerializer _jsonSerializer;
 
         public CollectionSyncManager(
             ILibraryManager libraryManager,
             ICollectionManager collectionManager,
             ILogger logger,
             TmdbService tmdbService,
-            IApplicationPaths appPaths)
+            IApplicationPaths appPaths,
+            IJsonSerializer jsonSerializer)
         {
             _libraryManager = libraryManager;
             _collectionManager = collectionManager;
             _logger = logger;
             _tmdbService = tmdbService;
             _appPaths = appPaths;
+            _jsonSerializer = jsonSerializer;
         }
 
         public async Task RunSyncAsync(IProgress<double> progress, CancellationToken cancellationToken, bool cleanAndRebuild = false)
@@ -89,6 +93,7 @@ namespace Emby.CrossLibraryCollections.Services
             // 候选池映射表: 疑似系列公共前缀 -> 对应的 BaseItem 列表
             var candidateMap = new Dictionary<string, List<BaseItem>>(StringComparer.OrdinalIgnoreCase);
             var ignoredPrefixes = new HashSet<string>(config.IgnoredCandidatePrefixes ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+            var adoptedPrefixes = new HashSet<string>(config.AdoptedCandidatePrefixes ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
 
             // 6. 第一优先级：自定义别名映射规则（支持模糊双向匹配）
             if (config.CustomRules != null && config.CustomRules.Count > 0)
@@ -179,8 +184,8 @@ namespace Emby.CrossLibraryCollections.Services
                             continue;
 
                         var lcp = TitleNormalizer.GetLongestCommonPrefix(itemA.CleanTitle, itemB.CleanTitle);
-                        // 公共前缀有效长度必须 >= 2，且不在黑名单及用户忽略名单中
-                        if (!string.IsNullOrEmpty(lcp) && lcp.Length >= 2 && !blacklist.Contains(lcp) && !ignoredPrefixes.Contains(lcp))
+                        // 公共前缀有效长度必须 >= 2，且不在黑名单、已忽略名单、已采纳名单中
+                        if (!string.IsNullOrEmpty(lcp) && lcp.Length >= 2 && !blacklist.Contains(lcp) && !ignoredPrefixes.Contains(lcp) && !adoptedPrefixes.Contains(lcp))
                         {
                             AddItemToGroup(candidateMap, lcp, itemA.Item);
                             AddItemToGroup(candidateMap, lcp, itemB.Item);
@@ -479,10 +484,19 @@ namespace Emby.CrossLibraryCollections.Services
         private static List<CandidateGroup> BuildPendingCandidates(Dictionary<string, List<BaseItem>> candidateMap, Dictionary<string, List<BaseItem>> existingGroups)
         {
             var result = new List<CandidateGroup>();
+            var config = Plugin.Instance.Configuration;
+            var ignored = new HashSet<string>(config.IgnoredCandidatePrefixes ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+            var adopted = new HashSet<string>(config.AdoptedCandidatePrefixes ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
 
             foreach (var kvp in candidateMap)
             {
                 var prefix = kvp.Key;
+                if (string.IsNullOrWhiteSpace(prefix)) continue;
+
+                // 终极安全关口：任何已被忽略或已处理采纳的前缀，一票否决
+                if (ignored.Contains(prefix) || adopted.Contains(prefix))
+                    continue;
+
                 var items = kvp.Value.Distinct().ToList();
                 bool isExisting = existingGroups.TryGetValue(prefix, out var matchedBoxSetItems);
                 var existingIdSet = isExisting ? new HashSet<long>(matchedBoxSetItems.Select(x => x.InternalId)) : new HashSet<long>();
@@ -594,6 +608,7 @@ namespace Emby.CrossLibraryCollections.Services
             }
 
             Plugin.Instance.SaveConfiguration();
+            SaveCandidateHistoryMirror();
 
             _logger.Info($"[CrossLibraryCollections] Synchronized and adopted candidate id='{candidateId}' suggested='{suggestedName}' target='{targetCollectionName}' with {itemIds.Length} items.");
             return true;
@@ -745,6 +760,7 @@ namespace Emby.CrossLibraryCollections.Services
             }
 
             Plugin.Instance.SaveConfiguration();
+            SaveCandidateHistoryMirror();
             _logger.Info($"[CrossLibraryCollections] Ignored candidate id='{candidateId}' prefix='{suggestedName}'.");
         }
 
@@ -1196,6 +1212,99 @@ namespace Emby.CrossLibraryCollections.Services
             {
                 list.Add(item);
             }
+        }
+
+        /// <summary>
+        /// 双重持久化镜像：保存已忽略和已采纳的候选记忆到本地独立 JSON 文件
+        /// </summary>
+        public void SaveCandidateHistoryMirror()
+        {
+            try
+            {
+                var config = Plugin.Instance.Configuration;
+                var cacheDir = Path.Combine(_appPaths.CachePath, "CrossLibraryCollections");
+                Directory.CreateDirectory(cacheDir);
+                var historyFile = Path.Combine(cacheDir, "candidate_history.json");
+
+                var historyData = new CandidateHistoryModel
+                {
+                    LastUpdated = DateTime.UtcNow.ToString("o"),
+                    Ignored = (config.IgnoredCandidatePrefixes ?? new List<string>()).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                    Adopted = (config.AdoptedCandidatePrefixes ?? new List<string>()).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+                };
+
+                _jsonSerializer.SerializeToFile(historyData, historyFile);
+                _logger.Info($"[CrossLibraryCollections] Saved candidate history mirror ({historyData.Ignored.Count} ignored, {historyData.Adopted.Count} adopted).");
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn($"[CrossLibraryCollections] Failed to save candidate history mirror: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 双重持久化镜像恢复：当插件启动或配置丢失时，自动从独立 JSON 镜像中合并恢复
+        /// </summary>
+        public void RestoreCandidateHistoryMirror()
+        {
+            try
+            {
+                var cacheDir = Path.Combine(_appPaths.CachePath, "CrossLibraryCollections");
+                var historyFile = Path.Combine(cacheDir, "candidate_history.json");
+                if (!File.Exists(historyFile)) return;
+
+                var historyData = _jsonSerializer.DeserializeFromFile<CandidateHistoryModel>(historyFile);
+                if (historyData == null) return;
+
+                var config = Plugin.Instance.Configuration;
+                bool changed = false;
+
+                if (config.IgnoredCandidatePrefixes == null) config.IgnoredCandidatePrefixes = new List<string>();
+                if (config.AdoptedCandidatePrefixes == null) config.AdoptedCandidatePrefixes = new List<string>();
+
+                var currentIgnored = new HashSet<string>(config.IgnoredCandidatePrefixes, StringComparer.OrdinalIgnoreCase);
+                if (historyData.Ignored != null)
+                {
+                    foreach (var item in historyData.Ignored)
+                    {
+                        if (!string.IsNullOrWhiteSpace(item) && currentIgnored.Add(item.Trim()))
+                        {
+                            config.IgnoredCandidatePrefixes.Add(item.Trim());
+                            changed = true;
+                        }
+                    }
+                }
+
+                var currentAdopted = new HashSet<string>(config.AdoptedCandidatePrefixes, StringComparer.OrdinalIgnoreCase);
+                if (historyData.Adopted != null)
+                {
+                    foreach (var item in historyData.Adopted)
+                    {
+                        if (!string.IsNullOrWhiteSpace(item) && currentAdopted.Add(item.Trim()))
+                        {
+                            config.AdoptedCandidatePrefixes.Add(item.Trim());
+                            changed = true;
+                        }
+                    }
+                }
+
+                if (changed)
+                {
+                    Plugin.Instance.SaveConfiguration();
+                    _logger.Info($"[CrossLibraryCollections] Restored and merged candidate history mirror successfully ({config.IgnoredCandidatePrefixes.Count} ignored, {config.AdoptedCandidatePrefixes.Count} adopted).");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn($"[CrossLibraryCollections] Failed to restore candidate history mirror: {ex.Message}");
+            }
+        }
+
+        private class CandidateHistoryModel
+        {
+            public string LastUpdated { get; set; }
+            public List<string> Ignored { get; set; }
+            public List<string> Adopted { get; set; }
         }
     }
 }
